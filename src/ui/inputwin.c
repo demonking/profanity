@@ -414,6 +414,9 @@ static int
 _inp_rl_getc(FILE *stream)
 {
     int ch = rl_getc(stream);
+
+    cons_debug("CODE: %d", ch);
+
     if (_inp_printable(ch)) {
         ProfWin *window = wins_get_current();
         cmd_reset_autocomplete(window);
