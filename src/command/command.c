@@ -190,24 +190,26 @@ static struct cmd_t command_defs[] =
           "--------------------------",
           "Manage your roster, and roster display settings.",
           "",
-          "command - online|show|hide|by|size|add|remove|nick|clearnick",
+          "command - online|show|hide|by|size|add|remove|remove_all|nick|clearnick",
           "",
-          "online         : Show all online contacts in your roster.",
-          "show           : Show the roster panel.",
-          "show offline   : Show offline contacts in the roster panel.",
-          "show resource  : Show contact's connected resources in the roster panel.",
-          "hide           : Hide the roster panel.",
-          "hide offline   : Hide offline contacts in the roster panel.",
-          "hide resource  : Hide contact's connected resources in the roster panel.",
-          "by group       : Group contacts in the roster panel by roster group.",
-          "by presence    : Group contacts in the roster panel by presence.",
-          "by none        : No grouping in the roster panel.",
-          "size           : Percentage of the screen taken up by the roster (1-99).",
-          "add jid [nick] : Add a new item to the roster.",
-          "remove jid     : Removes an item from the roster.",
-          "empty          : Remove all items from roster."
-          "nick jid nick  : Change a contacts nickname.",
-          "clearnick jid  : Removes the current nickname.",
+          "online              : Show all online contacts in your roster.",
+          "show                : Show the roster panel.",
+          "show offline        : Show offline contacts in the roster panel.",
+          "show resource       : Show contact's connected resources in the roster panel.",
+          "show empty          : When grouping by presence, show empty presence groups",
+          "hide                : Hide the roster panel.",
+          "hide offline        : Hide offline contacts in the roster panel.",
+          "hide resource       : Hide contact's connected resources in the roster panel.",
+          "hide empty          : When grouping by presence, hide empty presence groups",
+          "by group            : Group contacts in the roster panel by roster group.",
+          "by presence         : Group contacts in the roster panel by presence.",
+          "by none             : No grouping in the roster panel.",
+          "size                : Percentage of the screen taken up by the roster (1-99).",
+          "add jid [nick]      : Add a new item to the roster.",
+          "remove jid          : Removes an item from the roster.",
+          "remove_all contacts : Remove all items from roster.",
+          "nick jid nick       : Change a contacts nickname.",
+          "clearnick jid       : Removes the current nickname.",
           "",
           "Passing no arguments lists all contacts in your roster.",
           "",
@@ -701,18 +703,21 @@ static struct cmd_t command_defs[] =
           NULL } } },
 
     { "/time",
-        cmd_time, parse_args, 1, 2, &cons_time_setting,
-        { "/time setting|statusbar [setting]", "Time display.",
-        { "/time setting|statusbar [setting]",
-          "---------------------------------",
+        cmd_time, parse_args, 1, 3, &cons_time_setting,
+        { "/time main|statusbar set|off [format]", "Time display.",
+        { "/time main|statusbar set|off [format]",
+          "-------------------------------------",
           "Configure time display preferences.",
           "",
-          "minutes           : Use minutes precision in main window.",
-          "seconds           : Use seconds precision in main window.",
-          "off               : Do not show time in main window.",
-          "statusbar minutes : Show minutes precision in status bar.",
-          "statusbar seconds : Show seconds precision in status bar.",
-          "statusbar off     : Do not show time in status bar.",
+          "main set <format>      : Change time format to <format> in main window.",
+          "main off               : Do not show time in main window.",
+          "statusbar set <format> : Change time format to <format> in statusbar.",
+          "statusbar off          : Do not show time in status bar.",
+          "",
+          "Time formats are strings supported by g_date_time_format.",
+          "See https://developer.gnome.org/glib/stable/glib-GDateTime.html#g-date-time-format for more details.",
+          "Example: /time main set %H:%M (main time will be set to HH:MM)",
+          "Example: /time statusbar set yolo (statusbar time will all be changed to a static yolo)",
           NULL } } },
 
     { "/inpblock",
@@ -1212,6 +1217,7 @@ static Autocomplete wins_ac;
 static Autocomplete roster_ac;
 static Autocomplete roster_option_ac;
 static Autocomplete roster_by_ac;
+static Autocomplete roster_remove_all_ac;
 static Autocomplete group_ac;
 static Autocomplete bookmark_ac;
 static Autocomplete bookmark_property_ac;
@@ -1235,7 +1241,7 @@ static Autocomplete occupants_ac;
 static Autocomplete occupants_default_ac;
 static Autocomplete occupants_show_ac;
 static Autocomplete time_ac;
-static Autocomplete time_statusbar_ac;
+static Autocomplete time_format_ac;
 static Autocomplete resource_ac;
 static Autocomplete inpblock_ac;
 static Autocomplete receipts_ac;
@@ -1427,7 +1433,7 @@ cmd_init(void)
     autocomplete_add(roster_ac, "nick");
     autocomplete_add(roster_ac, "clearnick");
     autocomplete_add(roster_ac, "remove");
-    autocomplete_add(roster_ac, "empty");
+    autocomplete_add(roster_ac, "remove_all");
     autocomplete_add(roster_ac, "show");
     autocomplete_add(roster_ac, "hide");
     autocomplete_add(roster_ac, "by");
@@ -1436,11 +1442,15 @@ cmd_init(void)
     roster_option_ac = autocomplete_new();
     autocomplete_add(roster_option_ac, "offline");
     autocomplete_add(roster_option_ac, "resource");
+    autocomplete_add(roster_option_ac, "empty");
 
     roster_by_ac = autocomplete_new();
     autocomplete_add(roster_by_ac, "group");
     autocomplete_add(roster_by_ac, "presence");
     autocomplete_add(roster_by_ac, "none");
+
+    roster_remove_all_ac = autocomplete_new();
+    autocomplete_add(roster_remove_all_ac, "contacts");
 
     group_ac = autocomplete_new();
     autocomplete_add(group_ac, "show");
@@ -1585,15 +1595,12 @@ cmd_init(void)
     autocomplete_add(occupants_show_ac, "jid");
 
     time_ac = autocomplete_new();
-    autocomplete_add(time_ac, "minutes");
-    autocomplete_add(time_ac, "seconds");
-    autocomplete_add(time_ac, "off");
+    autocomplete_add(time_ac, "main");
     autocomplete_add(time_ac, "statusbar");
 
-    time_statusbar_ac = autocomplete_new();
-    autocomplete_add(time_statusbar_ac, "minutes");
-    autocomplete_add(time_statusbar_ac, "seconds");
-    autocomplete_add(time_statusbar_ac, "off");
+    time_format_ac = autocomplete_new();
+    autocomplete_add(time_format_ac, "set");
+    autocomplete_add(time_format_ac, "off");
 
     resource_ac = autocomplete_new();
     autocomplete_add(resource_ac, "set");
@@ -1654,6 +1661,7 @@ cmd_uninit(void)
     autocomplete_free(roster_ac);
     autocomplete_free(roster_option_ac);
     autocomplete_free(roster_by_ac);
+    autocomplete_free(roster_remove_all_ac);
     autocomplete_free(group_ac);
     autocomplete_free(bookmark_ac);
     autocomplete_free(bookmark_property_ac);
@@ -1677,7 +1685,7 @@ cmd_uninit(void)
     autocomplete_free(occupants_default_ac);
     autocomplete_free(occupants_show_ac);
     autocomplete_free(time_ac);
-    autocomplete_free(time_statusbar_ac);
+    autocomplete_free(time_format_ac);
     autocomplete_free(resource_ac);
     autocomplete_free(inpblock_ac);
     autocomplete_free(receipts_ac);
@@ -1827,6 +1835,7 @@ cmd_reset_autocomplete(ProfWin *window)
     autocomplete_reset(roster_ac);
     autocomplete_reset(roster_option_ac);
     autocomplete_reset(roster_by_ac);
+    autocomplete_reset(roster_remove_all_ac);
     autocomplete_reset(group_ac);
     autocomplete_reset(titlebar_ac);
     autocomplete_reset(bookmark_ac);
@@ -1851,7 +1860,7 @@ cmd_reset_autocomplete(ProfWin *window)
     autocomplete_reset(occupants_default_ac);
     autocomplete_reset(occupants_show_ac);
     autocomplete_reset(time_ac);
-    autocomplete_reset(time_statusbar_ac);
+    autocomplete_reset(time_format_ac);
     autocomplete_reset(resource_ac);
     autocomplete_reset(inpblock_ac);
     autocomplete_reset(receipts_ac);
@@ -2182,6 +2191,10 @@ _roster_autocomplete(ProfWin *window, const char * const input)
         return result;
     }
     result = autocomplete_param_with_func(input, "/roster remove", roster_barejid_autocomplete);
+    if (result) {
+        return result;
+    }
+    result = autocomplete_param_with_ac(input, "/roster remove_all", roster_remove_all_ac, TRUE);
     if (result) {
         return result;
     }
@@ -2763,7 +2776,12 @@ _time_autocomplete(ProfWin *window, const char * const input)
 {
     char *found = NULL;
 
-    found = autocomplete_param_with_ac(input, "/time statusbar", time_statusbar_ac, TRUE);
+    found = autocomplete_param_with_ac(input, "/time statusbar", time_format_ac, TRUE);
+    if (found) {
+        return found;
+    }
+
+    found = autocomplete_param_with_ac(input, "/time main", time_format_ac, TRUE);
     if (found) {
         return found;
     }

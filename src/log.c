@@ -34,6 +34,7 @@
 
 #include <assert.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -61,6 +62,16 @@ static GHashTable *logs;
 static GHashTable *groupchat_logs;
 static GDateTime *session_started;
 
+enum {
+    STDERR_BUFSIZE = 4000,
+    STDERR_RETRY_NR = 5,
+};
+static int stderr_inited;
+static log_level_t stderr_level;
+static int stderr_pipe[2];
+static char *stderr_buf;
+static GString *stderr_msg;
+
 struct dated_chat_log {
     gchar *filename;
     GDateTime *date;
@@ -80,7 +91,7 @@ static gchar * _get_main_log_file(void);
 static void _rotate_log_file(void);
 static char* _log_string_from_level(log_level_t level);
 static void _chat_log_chat(const char * const login, const char * const other,
-    const gchar * const msg, chat_log_direction_t direction, GTimeVal *tv_stamp);
+    const gchar * const msg, chat_log_direction_t direction, GDateTime *timestamp);
 
 void
 log_debug(const char * const msg, ...)
@@ -342,19 +353,19 @@ chat_log_msg_in(const char * const barejid, const char * const msg)
 }
 
 void
-chat_log_msg_in_delayed(const char * const barejid, const char * msg, GTimeVal *tv_stamp)
+chat_log_msg_in_delayed(const char * const barejid, const char * msg, GDateTime *timestamp)
 {
     if (prefs_get_boolean(PREF_CHLOG)) {
         const char *jid = jabber_get_fulljid();
         Jid *jidp = jid_create(jid);
-        _chat_log_chat(jidp->barejid, barejid, msg, PROF_IN_LOG, tv_stamp);
+        _chat_log_chat(jidp->barejid, barejid, msg, PROF_IN_LOG, timestamp);
         jid_destroy(jidp);
     }
 }
 
 static void
 _chat_log_chat(const char * const login, const char * const other,
-    const char * const msg, chat_log_direction_t direction, GTimeVal *tv_stamp)
+    const char * const msg, chat_log_direction_t direction, GDateTime *timestamp)
 {
     struct dated_chat_log *dated_log = g_hash_table_lookup(logs, other);
 
@@ -369,16 +380,9 @@ _chat_log_chat(const char * const login, const char * const other,
         g_hash_table_replace(logs, strdup(other), dated_log);
     }
 
-    gchar *date_fmt = NULL;
-    GDateTime *dt = NULL;
-    if (tv_stamp == NULL) {
-        dt = g_date_time_new_now_local();
-    } else {
-        dt = g_date_time_new_from_timeval_utc(tv_stamp);
-    }
+    if (timestamp == NULL) timestamp = g_date_time_new_now_local();
 
-    date_fmt = g_date_time_format(dt, "%H:%M:%S");
-
+    gchar *date_fmt = g_date_time_format(timestamp, "%H:%M:%S");
     FILE *logp = fopen(dated_log->filename, "a");
     g_chmod(dated_log->filename, S_IRUSR | S_IWUSR);
     if (logp) {
@@ -403,7 +407,6 @@ _chat_log_chat(const char * const login, const char * const other,
     }
 
     g_free(date_fmt);
-    g_date_time_unref(dt);
 }
 
 void
@@ -689,4 +692,96 @@ _log_string_from_level(log_level_t level)
         default:
             return "LOG";
     }
+}
+
+void
+log_stderr_handler(void)
+{
+    GString * const s = stderr_msg;
+    char * const buf = stderr_buf;
+    ssize_t size;
+    int retry = 0;
+    int i;
+
+    if (!stderr_inited)
+        return;
+
+    do {
+        size = read(stderr_pipe[0], buf, STDERR_BUFSIZE);
+        if (size == -1 && errno == EINTR && retry++ < STDERR_RETRY_NR)
+            continue;
+        if (size <= 0 || retry++ >= STDERR_RETRY_NR)
+            break;
+
+        for (i = 0; i < size; ++i) {
+            if (buf[i] == '\n') {
+                log_msg(stderr_level, "stderr", s->str);
+                g_string_assign(s, "");
+            } else
+                g_string_append_c(s, buf[i]);
+        }
+    } while (1);
+
+    if (s->len > 0 && s->str[0] != '\0') {
+        log_msg(stderr_level, "stderr", s->str);
+        g_string_assign(s, "");
+    }
+}
+
+void
+log_stderr_init(log_level_t level)
+{
+    int rc;
+    int flags;
+
+    rc = pipe(stderr_pipe);
+    if (rc != 0)
+        goto err;
+
+    flags = fcntl(stderr_pipe[0], F_GETFL);
+    rc = fcntl(stderr_pipe[0], F_SETFL, flags | O_NONBLOCK);
+    if (rc != 0)
+        goto err_close;
+
+    close(STDERR_FILENO);
+    rc = dup2(stderr_pipe[1], STDERR_FILENO);
+    if (rc < 0)
+        goto err_close;
+
+    stderr_buf = malloc(STDERR_BUFSIZE);
+    stderr_msg = g_string_sized_new(STDERR_BUFSIZE);
+    stderr_level = level;
+    stderr_inited = 1;
+
+    if (stderr_buf == NULL || stderr_msg == NULL) {
+        errno = ENOMEM;
+        goto err_free;
+    }
+    return;
+
+err_free:
+    if (stderr_msg != NULL)
+        g_string_free(stderr_msg, TRUE);
+    free(stderr_buf);
+err_close:
+    close(stderr_pipe[0]);
+    close(stderr_pipe[1]);
+err:
+    stderr_inited = 0;
+    log_error("Unable to init stderr log handler: %s", strerror(errno));
+}
+
+void
+log_stderr_close(void)
+{
+    if (!stderr_inited)
+        return;
+
+    /* handle remaining logs before close */
+    log_stderr_handler();
+    stderr_inited = 0;
+    free(stderr_buf);
+    g_string_free(stderr_msg, TRUE);
+    close(stderr_pipe[0]);
+    close(stderr_pipe[1]);
 }

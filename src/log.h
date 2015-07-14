@@ -63,6 +63,10 @@ void log_msg(log_level_t level, const char * const area,
     const char * const msg);
 log_level_t log_level_from_string(char *log_level);
 
+void log_stderr_init(log_level_t level);
+void log_stderr_close(void);
+void log_stderr_handler(void);
+
 void chat_log_init(void);
 
 void chat_log_msg_out(const char * const barejid, const char * const msg);
@@ -70,7 +74,7 @@ void chat_log_otr_msg_out(const char * const barejid, const char * const msg);
 void chat_log_pgp_msg_out(const char * const barejid, const char * const msg);
 
 void chat_log_msg_in(const char * const barejid, const char * const msg);
-void chat_log_msg_in_delayed(const char * const barejid, const char * msg, GTimeVal *tv_stamp);
+void chat_log_msg_in_delayed(const char * const barejid, const char * msg, GDateTime *timestamp);
 void chat_log_otr_msg_in(const char * const barejid, const char * const msg, gboolean was_decrypted);
 void chat_log_pgp_msg_in(const char * const barejid, const char * const msg);
 

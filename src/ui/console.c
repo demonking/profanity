@@ -954,12 +954,10 @@ void
 cons_time_setting(void)
 {
     char *pref_time = prefs_get_string(PREF_TIME);
-    if (g_strcmp0(pref_time, "minutes") == 0)
-        cons_show("Time (/time)                  : minutes");
-    else if (g_strcmp0(pref_time, "off") == 0)
+    if (g_strcmp0(pref_time, "off") == 0)
         cons_show("Time (/time)                  : OFF");
     else
-        cons_show("Time (/time)                  : seconds");
+        cons_show("Time (/time)                  : %s", pref_time);
 
     prefs_free_string(pref_time);
 
@@ -1040,6 +1038,11 @@ cons_roster_setting(void)
         cons_show("Roster resource (/roster)     : show");
     else
         cons_show("Roster resource (/roster)     : hide");
+
+    if (prefs_get_boolean(PREF_ROSTER_EMPTY))
+        cons_show("Roster empty (/roster)        : show");
+    else
+        cons_show("Roster empty (/roster)        : hide");
 
     char *by = prefs_get_string(PREF_ROSTER_BY);
     cons_show("Roster by (/roster)           : %s", by);

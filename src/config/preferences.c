@@ -103,6 +103,28 @@ prefs_load(void)
         g_error_free(err);
     }
 
+    // migrate pre 0.4.7 time settings format
+    if (g_key_file_has_key(prefs, PREF_GROUP_UI, "time", NULL)) {
+        char *time = g_key_file_get_string(prefs, PREF_GROUP_UI, "time", NULL);
+        if (g_strcmp0(time, "minutes") == 0) {
+            g_key_file_set_string(prefs, PREF_GROUP_UI, "time", "%H:%M");
+        } else if (g_strcmp0(time, "seconds") == 0) {
+            g_key_file_set_string(prefs, PREF_GROUP_UI, "time", "%H:%M:%S");
+        } else if (g_strcmp0(time, "off") == 0) {
+            g_key_file_set_string(prefs, PREF_GROUP_UI, "time", "");
+        }
+    }
+    if (g_key_file_has_key(prefs, PREF_GROUP_UI, "time.statusbar", NULL)) {
+        char *time = g_key_file_get_string(prefs, PREF_GROUP_UI, "time.statusbar", NULL);
+        if (g_strcmp0(time, "minutes") == 0) {
+            g_key_file_set_string(prefs, PREF_GROUP_UI, "time.statusbar", "%H:%M");
+        } else if (g_strcmp0(time, "seconds") == 0) {
+            g_key_file_set_string(prefs, PREF_GROUP_UI, "time.statusbar", "%H:%M:%S");
+        } else if (g_strcmp0(time, "off") == 0) {
+            g_key_file_set_string(prefs, PREF_GROUP_UI, "time.statusbar", "");
+        }
+    }
+
     _save_prefs();
 
     boolean_choice_ac = autocomplete_new();
@@ -164,7 +186,7 @@ prefs_get_string(preference_t pref)
 
     if (result == NULL) {
         if (def) {
-            return strdup(def);
+            return g_strdup(def);
         } else {
             return NULL;
         }
@@ -177,7 +199,7 @@ void
 prefs_free_string(char *pref)
 {
     if (pref) {
-        free(pref);
+        g_free(pref);
     }
     pref = NULL;
 }
@@ -281,7 +303,11 @@ prefs_set_reconnect(gint value)
 gint
 prefs_get_autoping(void)
 {
-    return g_key_file_get_integer(prefs, PREF_GROUP_CONNECTION, "autoping", NULL);
+    if (!g_key_file_has_key(prefs, PREF_GROUP_CONNECTION, "autoping", NULL)) {
+        return 60;
+    } else {
+        return g_key_file_get_integer(prefs, PREF_GROUP_CONNECTION, "autoping", NULL);
+    }
 }
 
 void
@@ -496,6 +522,7 @@ _get_group(preference_t pref)
         case PREF_ROSTER:
         case PREF_ROSTER_OFFLINE:
         case PREF_ROSTER_RESOURCE:
+        case PREF_ROSTER_EMPTY:
         case PREF_ROSTER_BY:
         case PREF_RESOURCE_TITLE:
         case PREF_RESOURCE_MESSAGE:
@@ -650,6 +677,8 @@ _get_key(preference_t pref)
             return "roster.offline";
         case PREF_ROSTER_RESOURCE:
             return "roster.resource";
+        case PREF_ROSTER_EMPTY:
+            return "roster.empty";
         case PREF_ROSTER_BY:
             return "roster.by";
         case PREF_RESOURCE_TITLE:
@@ -697,6 +726,7 @@ _get_default_boolean(preference_t pref)
         case PREF_ROSTER:
         case PREF_ROSTER_OFFLINE:
         case PREF_ROSTER_RESOURCE:
+        case PREF_ROSTER_EMPTY:
             return TRUE;
         default:
             return FALSE;
@@ -725,9 +755,9 @@ _get_default_string(preference_t pref)
         case PREF_ROSTER_BY:
             return "presence";
         case PREF_TIME:
-            return "seconds";
+            return "%H:%M:%S";
         case PREF_TIME_STATUSBAR:
-            return "minutes";
+            return "%H:%M";
         case PREF_PGP_LOG:
             return "redact";
         default:
