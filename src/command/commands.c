@@ -226,6 +226,7 @@ cmd_connect(ProfWin *window, gchar **args, struct cmd_help_t help)
             } else {
                 cons_show("Error evaluating password, see logs for details.");
                 g_free(lower);
+                account_free(account);
                 return TRUE;
             }
 
@@ -238,6 +239,7 @@ cmd_connect(ProfWin *window, gchar **args, struct cmd_help_t help)
         }
 
         jid = account_create_full_jid(account);
+        account_free(account);
 
     // connect with JID
     } else {
@@ -436,7 +438,11 @@ cmd_account(ProfWin *window, gchar **args, struct cmd_help_t help)
                     }
                 } else if (strcmp(property, "resource") == 0) {
                     accounts_set_resource(account_name, value);
-                    cons_show("Updated resource for account %s: %s", account_name, value);
+                    if (jabber_get_connection_status() == JABBER_CONNECTED) {
+                        cons_show("Updated resource for account %s: %s, you will need to reconnect to pick up the change.", account_name, value);
+                    } else {
+                        cons_show("Updated resource for account %s: %s", account_name, value);
+                    }
                     cons_show("");
                 } else if (strcmp(property, "password") == 0) {
                     if(accounts_get_account(account_name)->eval_password) {
@@ -834,9 +840,9 @@ cmd_help(ProfWin *window, gchar **args, struct cmd_help_t help)
     } else if (strcmp(args[0], "settings") == 0) {
         gchar *filter[] = { "/account", "/autoaway", "/autoping", "/autoconnect", "/beep",
             "/carbons", "/chlog", "/flash", "/gone", "/grlog", "/history", "/intype",
-            "/log", "/mouse", "/notify", "/outtype", "/prefs", "/priority",
-            "/reconnect", "/roster", "/splash", "/states", "/statuses", "/theme",
-            "/titlebar", "/vercheck", "/privileges", "/occupants", "/presence", "/wrap", "/winstidy" };
+            "/log", "/notify", "/outtype", "/prefs", "/priority", "/reconnect", "/roster",
+            "/splash", "/states", "/statuses", "/theme", "/titlebar", "/vercheck",
+            "/privileges", "/occupants", "/presence", "/wrap", "/winstidy" };
         _cmd_show_filtered_help("Settings commands", filter, ARRAY_SIZE(filter));
 
     } else if (strcmp(args[0], "navigation") == 0) {
@@ -1572,6 +1578,13 @@ cmd_roster(ProfWin *window, gchar **args, struct cmd_help_t help)
                 rosterwin_roster();
             }
             return TRUE;
+        } else if (g_strcmp0(args[1], "empty") == 0) {
+            cons_show("Roster empty enabled");
+            prefs_set_boolean(PREF_ROSTER_EMPTY, TRUE);
+            if (conn_status == JABBER_CONNECTED) {
+                rosterwin_roster();
+            }
+            return TRUE;
         } else {
             cons_show("Usage: %s", help.usage);
             return TRUE;
@@ -1594,6 +1607,13 @@ cmd_roster(ProfWin *window, gchar **args, struct cmd_help_t help)
         } else if (g_strcmp0(args[1], "resource") == 0) {
             cons_show("Roster resource disabled");
             prefs_set_boolean(PREF_ROSTER_RESOURCE, FALSE);
+            if (conn_status == JABBER_CONNECTED) {
+                rosterwin_roster();
+            }
+            return TRUE;
+        } else if (g_strcmp0(args[1], "empty") == 0) {
+            cons_show("Roster empty disabled");
+            prefs_set_boolean(PREF_ROSTER_EMPTY, FALSE);
             if (conn_status == JABBER_CONNECTED) {
                 rosterwin_roster();
             }
@@ -1658,7 +1678,11 @@ cmd_roster(ProfWin *window, gchar **args, struct cmd_help_t help)
         }
         return TRUE;
 
-    } else if (strcmp(args[0], "empty") == 0) {
+    } else if (strcmp(args[0], "remove_all") == 0) {
+        if (g_strcmp0(args[1], "contacts") != 0) {
+            cons_show("Usage: %s", help.usage);
+            return TRUE;
+        }
         if (conn_status != JABBER_CONNECTED) {
             cons_show("You are not currently connected.");
             return TRUE;
@@ -2085,13 +2109,17 @@ cmd_software(ProfWin *window, gchar **args, struct cmd_help_t help)
         case WIN_CHAT:
         case WIN_CONSOLE:
             if (args[0]) {
+                Jid *myJid = jid_create(jabber_get_fulljid());
                 Jid *jid = jid_create(args[0]);
 
                 if (jid == NULL || jid->fulljid == NULL) {
                     cons_show("You must provide a full jid to the /software command.");
+                } else if (g_strcmp0(jid->barejid, myJid->barejid) == 0) {
+                    cons_show("Cannot request software version for yourself.");
                 } else {
                     iq_send_software_version(jid->fulljid);
                 }
+                jid_destroy(myJid);
                 jid_destroy(jid);
             } else {
                 cons_show("You must provide a jid to the /software command.");
@@ -2178,6 +2206,7 @@ cmd_join(ProfWin *window, gchar **args, struct cmd_help_t help)
     if (!parsed) {
         cons_show("Usage: %s", help.usage);
         cons_show("");
+        jid_destroy(room_arg);
         return TRUE;
     }
 
@@ -3400,18 +3429,16 @@ gboolean
 cmd_time(ProfWin *window, gchar **args, struct cmd_help_t help)
 {
     if (g_strcmp0(args[0], "statusbar") == 0) {
-        if (g_strcmp0(args[1], "minutes") == 0) {
-            prefs_set_string(PREF_TIME_STATUSBAR, "minutes");
-            cons_show("Status bar time precision set to minutes.");
-            ui_redraw();
+        if (args[1] == NULL) {
+            cons_show("Current status bar time format is '%s'.", prefs_get_string(PREF_TIME_STATUSBAR));
             return TRUE;
-        } else if (g_strcmp0(args[1], "seconds") == 0) {
-            prefs_set_string(PREF_TIME_STATUSBAR, "seconds");
-            cons_show("Status bar time precision set to seconds.");
+        } else if (g_strcmp0(args[1], "set") == 0 && args[2] != NULL) {
+            prefs_set_string(PREF_TIME_STATUSBAR, args[2]);
+            cons_show("Status bar time format set to '%s'.", args[2]);
             ui_redraw();
             return TRUE;
         } else if (g_strcmp0(args[1], "off") == 0) {
-            prefs_set_string(PREF_TIME_STATUSBAR, "off");
+            prefs_set_string(PREF_TIME_STATUSBAR, "");
             cons_show("Status bar time display disabled.");
             ui_redraw();
             return TRUE;
@@ -3419,19 +3446,17 @@ cmd_time(ProfWin *window, gchar **args, struct cmd_help_t help)
             cons_show("Usage: %s", help.usage);
             return TRUE;
         }
-    } else {
-        if (g_strcmp0(args[0], "minutes") == 0) {
-            prefs_set_string(PREF_TIME, "minutes");
-            cons_show("Time precision set to minutes.");
+    } else if (g_strcmp0(args[0], "main") == 0) {
+        if (args[1] == NULL) {
+            cons_show("Current time format is '%s'.", prefs_get_string(PREF_TIME));
+            return TRUE;
+        } else if (g_strcmp0(args[1], "set") == 0 && args[2] != NULL) {
+            prefs_set_string(PREF_TIME, args[2]);
+            cons_show("Time format set to '%s'.", args[2]);
             wins_resize_all();
             return TRUE;
-        } else if (g_strcmp0(args[0], "seconds") == 0) {
-            prefs_set_string(PREF_TIME, "seconds");
-            cons_show("Time precision set to seconds.");
-            wins_resize_all();
-            return TRUE;
-        } else if (g_strcmp0(args[0], "off") == 0) {
-            prefs_set_string(PREF_TIME, "off");
+        } else if (g_strcmp0(args[1], "off") == 0) {
+            prefs_set_string(PREF_TIME, "");
             cons_show("Time display disabled.");
             wins_resize_all();
             return TRUE;
@@ -3439,6 +3464,9 @@ cmd_time(ProfWin *window, gchar **args, struct cmd_help_t help)
             cons_show("Usage: %s", help.usage);
             return TRUE;
         }
+    } else {
+        cons_show("Usage: %s", help.usage);
+        return TRUE;
     }
 }
 
@@ -4049,13 +4077,6 @@ cmd_grlog(ProfWin *window, gchar **args, struct cmd_help_t help)
         "Groupchat logging", PREF_GRLOG);
 
     return result;
-}
-
-gboolean
-cmd_mouse(ProfWin *window, gchar **args, struct cmd_help_t help)
-{
-    return _cmd_set_boolean_preference(args[0], help,
-        "Mouse handling", PREF_MOUSE);
 }
 
 gboolean

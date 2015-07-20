@@ -101,6 +101,7 @@ functionaltest_sources = \
 	tests/functionaltests/test_presence.c tests/functionaltests/test_presence.h \
 	tests/functionaltests/test_message.c tests/functionaltests/test_message.h \
 	tests/functionaltests/test_chat_session.c tests/functionaltests/test_chat_session.h \
+	tests/functionaltests/test_carbons.c tests/functionaltests/test_carbons.h \
 	tests/functionaltests/functionaltests.c
 
 main_source = src/main.c
@@ -153,13 +154,19 @@ if INCLUDE_GIT_VERSION
 BUILT_SOURCES = $(git_include)
 endif
 
-TESTS = tests/unittests/unittests tests/functionaltests/functionaltests
-check_PROGRAMS = tests/unittests/unittests tests/functionaltests/functionaltests
+TESTS = tests/unittests/unittests
+check_PROGRAMS = tests/unittests/unittests
 tests_unittests_unittests_SOURCES = $(unittest_sources)
+tests_unittests_unittests_CFLAGS = -w
 tests_unittests_unittests_LDADD = -lcmocka
+
+if HAVE_STABBER
+TESTS += tests/functionaltests/functionaltests
+check_PROGRAMS += tests/functionaltests/functionaltests
 tests_functionaltests_functionaltests_SOURCES = $(functionaltest_sources)
 tests_functionaltests_functionaltests_CFLAGS = -I/usr/include/tcl8.6 -I/usr/include/tcl8.5
 tests_functionaltests_functionaltests_LDADD = -lcmocka -lstabber -lexpect -ltcl
+endif
 
 man_MANS = $(man_sources)
 

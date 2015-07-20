@@ -306,6 +306,30 @@ stanza_attach_carbons_private(xmpp_ctx_t *ctx, xmpp_stanza_t *stanza)
 }
 
 xmpp_stanza_t *
+stanza_attach_hints_no_copy(xmpp_ctx_t *ctx, xmpp_stanza_t *stanza)
+{
+    xmpp_stanza_t *no_copy = xmpp_stanza_new(ctx);
+    xmpp_stanza_set_name(no_copy, "no-copy");
+    xmpp_stanza_set_ns(no_copy, STANZA_NS_HINTS);
+    xmpp_stanza_add_child(stanza, no_copy);
+    xmpp_stanza_release(no_copy);
+
+    return stanza;
+}
+
+xmpp_stanza_t *
+stanza_attach_hints_no_store(xmpp_ctx_t *ctx, xmpp_stanza_t *stanza)
+{
+    xmpp_stanza_t *no_store = xmpp_stanza_new(ctx);
+    xmpp_stanza_set_name(no_store, "no-store");
+    xmpp_stanza_set_ns(no_store, STANZA_NS_HINTS);
+    xmpp_stanza_add_child(stanza, no_store);
+    xmpp_stanza_release(no_store);
+
+    return stanza;
+}
+
+xmpp_stanza_t *
 stanza_attach_receipt_request(xmpp_ctx_t *ctx, xmpp_stanza_t *stanza)
 {
     xmpp_stanza_t *receipet_request = xmpp_stanza_new(ctx);
@@ -982,17 +1006,21 @@ stanza_create_ping_iq(xmpp_ctx_t *ctx, const char * const target)
     return iq;
 }
 
-gboolean
-stanza_get_delay(xmpp_stanza_t * const stanza, GTimeVal *tv_stamp)
+GDateTime*
+stanza_get_delay(xmpp_stanza_t * const stanza)
 {
+    GTimeVal utc_stamp;
     // first check for XEP-0203 delayed delivery
     xmpp_stanza_t *delay = xmpp_stanza_get_child_by_name(stanza, STANZA_NAME_DELAY);
     if (delay) {
         char *xmlns = xmpp_stanza_get_attribute(delay, STANZA_ATTR_XMLNS);
         if (xmlns && (strcmp(xmlns, "urn:xmpp:delay") == 0)) {
             char *stamp = xmpp_stanza_get_attribute(delay, STANZA_ATTR_STAMP);
-            if (stamp && (g_time_val_from_iso8601(stamp, tv_stamp))) {
-                return TRUE;
+            if (stamp && (g_time_val_from_iso8601(stamp, &utc_stamp))) {
+                GDateTime *utc_datetime = g_date_time_new_from_timeval_utc(&utc_stamp);
+                GDateTime *local_datetime = g_date_time_to_local(utc_datetime);
+                g_date_time_unref(utc_datetime);
+                return local_datetime;
             }
         }
     }
@@ -1004,13 +1032,16 @@ stanza_get_delay(xmpp_stanza_t * const stanza, GTimeVal *tv_stamp)
         char *xmlns = xmpp_stanza_get_attribute(x, STANZA_ATTR_XMLNS);
         if (xmlns && (strcmp(xmlns, "jabber:x:delay") == 0)) {
             char *stamp = xmpp_stanza_get_attribute(x, STANZA_ATTR_STAMP);
-            if (stamp && (g_time_val_from_iso8601(stamp, tv_stamp))) {
-                return TRUE;
+            if (stamp && (g_time_val_from_iso8601(stamp, &utc_stamp))) {
+                GDateTime *utc_datetime = g_date_time_new_from_timeval_utc(&utc_stamp);
+                GDateTime *local_datetime = g_date_time_to_local(utc_datetime);
+                g_date_time_unref(utc_datetime);
+                return local_datetime;
             }
         }
     }
 
-    return FALSE;
+    return NULL;
 }
 
 char *

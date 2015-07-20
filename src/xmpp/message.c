@@ -170,6 +170,7 @@ message_send_chat_pgp(const char * const barejid, const char * const msg)
         } else {
             message = stanza_create_message(ctx, id, jid, STANZA_TYPE_CHAT, msg);
         }
+        jid_destroy(jidp);
     } else {
         message = stanza_create_message(ctx, id, jid, STANZA_TYPE_CHAT, msg);
     }
@@ -212,6 +213,8 @@ message_send_chat_otr(const char * const barejid, const char * const msg)
     }
 
     stanza_attach_carbons_private(ctx, message);
+    stanza_attach_hints_no_copy(ctx, message);
+    stanza_attach_hints_no_store(ctx, message);
 
     if (prefs_get_boolean(PREF_RECEIPTS_REQUEST)) {
         stanza_attach_receipt_request(ctx, message);
@@ -449,6 +452,7 @@ _conference_handler(xmpp_conn_t * const conn, xmpp_stanza_t * const stanza, void
     // XEP-0249
     char *room = xmpp_stanza_get_attribute(xns_conference, STANZA_ATTR_JID);
     if (!room) {
+        jid_destroy(jidp);
         return 1;
     }
 
@@ -557,10 +561,10 @@ _groupchat_handler(xmpp_conn_t * const conn, xmpp_stanza_t * const stanza, void 
     }
 
     // determine if the notifications happened whilst offline
-    GTimeVal tv_stamp;
-    gboolean delayed = stanza_get_delay(stanza, &tv_stamp);
-    if (delayed) {
-        sv_ev_room_history(jid->barejid, jid->resourcepart, tv_stamp, message);
+    GDateTime *timestamp = stanza_get_delay(stanza);
+    if (timestamp) {
+        sv_ev_room_history(jid->barejid, jid->resourcepart, timestamp, message);
+        g_date_time_unref(timestamp);
     } else {
         sv_ev_room_message(jid->barejid, jid->resourcepart, message);
     }
@@ -661,10 +665,10 @@ _private_chat_handler(xmpp_stanza_t * const stanza, const char * const fulljid)
         return;
     }
 
-    GTimeVal tv_stamp;
-    gboolean delayed = stanza_get_delay(stanza, &tv_stamp);
-    if (delayed) {
-        sv_ev_delayed_private_message(fulljid, message, tv_stamp);
+    GDateTime *timestamp = stanza_get_delay(stanza);
+    if (timestamp) {
+        sv_ev_delayed_private_message(fulljid, message, timestamp);
+        g_date_time_unref(timestamp);
     } else {
         sv_ev_incoming_private_message(fulljid, message);
     }
@@ -754,19 +758,18 @@ _chat_handler(xmpp_conn_t * const conn, xmpp_stanza_t * const stanza, void * con
     // private message from chat room use full jid (room/nick)
     if (muc_active(jid->barejid)) {
         _private_chat_handler(stanza, jid->fulljid);
+        jid_destroy(jid);
         return 1;
     }
 
     // standard chat message, use jid without resource
-    GTimeVal tv_stamp;
-    gboolean delayed = stanza_get_delay(stanza, &tv_stamp);
-
+    GDateTime *timestamp = stanza_get_delay(stanza);
     xmpp_stanza_t *body = xmpp_stanza_get_child_by_name(stanza, STANZA_NAME_BODY);
     if (body) {
         char *message = xmpp_stanza_get_text(body);
         if (message) {
-            if (delayed) {
-                sv_ev_delayed_message(jid->barejid, message, tv_stamp);
+            if (timestamp) {
+                sv_ev_delayed_message(jid->barejid, message, timestamp);
             } else {
                 char *enc_message = NULL;
                 xmpp_stanza_t *x = xmpp_stanza_get_child_by_ns(stanza, STANZA_NS_ENCRYPTED);
@@ -784,7 +787,7 @@ _chat_handler(xmpp_conn_t * const conn, xmpp_stanza_t * const stanza, void * con
     }
 
     // handle chat sessions and states
-    if (!delayed && jid->resourcepart) {
+    if (!timestamp && jid->resourcepart) {
         gboolean gone = xmpp_stanza_get_child_by_name(stanza, STANZA_NAME_GONE) != NULL;
         gboolean typing = xmpp_stanza_get_child_by_name(stanza, STANZA_NAME_COMPOSING) != NULL;
         gboolean paused = xmpp_stanza_get_child_by_name(stanza, STANZA_NAME_PAUSED) != NULL;
@@ -804,6 +807,7 @@ _chat_handler(xmpp_conn_t * const conn, xmpp_stanza_t * const stanza, void * con
         }
     }
 
+    if (timestamp) g_date_time_unref(timestamp);
     jid_destroy(jid);
     return 1;
 }

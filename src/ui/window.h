@@ -59,7 +59,7 @@ void win_show_status_string(ProfWin *window, const char * const from,
     const char * const show, const char * const status,
     GDateTime *last_activity, const char * const pre,
     const char * const default_show);
-void win_print_incoming_message(ProfWin *window, GTimeVal *tv_stamp,
+void win_print_incoming_message(ProfWin *window, GDateTime *timestamp,
     const char * const from, const char * const message);
 void win_print_with_receipt(ProfWin *window, const char show_char, GTimeVal *tstamp, int flags,
     theme_item_t theme_item, const char * const from, const char * const message, char *id);
@@ -68,7 +68,6 @@ void win_redraw(ProfWin *window);
 int win_roster_cols(void);
 int win_occpuants_cols(void);
 void win_printline_nowrap(WINDOW *win, char *msg);
-void win_mouse(ProfWin *current, const wint_t ch, const int result);
 void win_mark_received(ProfWin *window, const char * const id);
 
 gboolean win_has_active_subwin(ProfWin *window);

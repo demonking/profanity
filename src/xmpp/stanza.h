@@ -158,6 +158,7 @@
 #define STANZA_NS_CAPTCHA "urn:xmpp:captcha"
 #define STANZA_NS_PUBSUB "http://jabber.org/protocol/pubsub"
 #define STANZA_NS_CARBONS "urn:xmpp:carbons:2"
+#define STANZA_NS_HINTS "urn:xmpp:hints"
 #define STANZA_NS_FORWARD "urn:xmpp:forward:0"
 #define STANZA_NS_RECEIPTS "urn:xmpp:receipts"
 #define STANZA_NS_SIGNED "jabber:x:signed"
@@ -195,6 +196,8 @@ xmpp_stanza_t* stanza_create_chat_state(xmpp_ctx_t *ctx,
 
 xmpp_stanza_t * stanza_attach_state(xmpp_ctx_t *ctx, xmpp_stanza_t *stanza, const char * const state);
 xmpp_stanza_t * stanza_attach_carbons_private(xmpp_ctx_t *ctx, xmpp_stanza_t *stanza);
+xmpp_stanza_t * stanza_attach_hints_no_copy(xmpp_ctx_t *ctx, xmpp_stanza_t *stanza);
+xmpp_stanza_t * stanza_attach_hints_no_store(xmpp_ctx_t *ctx, xmpp_stanza_t *stanza);
 xmpp_stanza_t * stanza_attach_receipt_request(xmpp_ctx_t *ctx, xmpp_stanza_t *stanza);
 
 xmpp_stanza_t* stanza_create_message(xmpp_ctx_t *ctx, char *id,
@@ -223,7 +226,7 @@ xmpp_stanza_t* stanza_create_mediated_invite(xmpp_ctx_t *ctx, const char * const
 
 gboolean stanza_contains_chat_state(xmpp_stanza_t *stanza);
 
-gboolean stanza_get_delay(xmpp_stanza_t * const stanza, GTimeVal *tv_stamp);
+GDateTime* stanza_get_delay(xmpp_stanza_t * const stanza);
 
 gboolean stanza_is_muc_presence(xmpp_stanza_t * const stanza);
 gboolean stanza_is_muc_self_presence(xmpp_stanza_t * const stanza,

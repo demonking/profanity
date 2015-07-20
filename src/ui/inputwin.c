@@ -71,6 +71,7 @@ static WINDOW *inp_win;
 static int pad_start = 0;
 
 static struct timeval p_rl_timeout;
+/* Timeout in ms. Shows how long select() may block. */
 static gint inp_timeout = 0;
 static gint no_input_count = 0;
 
@@ -115,14 +116,6 @@ create_input_window(void)
 #else
     ESCDELAY = 25;
 #endif
-    if (inp_timeout == 1000) {
-        p_rl_timeout.tv_sec = 1;
-        p_rl_timeout.tv_usec = 0;
-    } else {
-        p_rl_timeout.tv_sec = 0;
-        p_rl_timeout.tv_usec = inp_timeout * 1000;
-    }
-
     rl_readline_name = "profanity";
     rl_getc_function = _inp_rl_getc;
     rl_startup_hook = _inp_rl_startup_hook;
@@ -141,13 +134,17 @@ inp_readline(void)
 {
     free(inp_line);
     inp_line = NULL;
+    p_rl_timeout.tv_sec = inp_timeout / 1000;
+    p_rl_timeout.tv_usec = inp_timeout % 1000 * 1000;
     FD_ZERO(&fds);
     FD_SET(fileno(rl_instream), &fds);
     errno = 0;
     r = select(FD_SETSIZE, &fds, NULL, NULL, &p_rl_timeout);
     if (r < 0) {
-        char *err_msg = strerror(errno);
-        log_error("Readline failed: %s", err_msg);
+        if (errno != EINTR) {
+            char *err_msg = strerror(errno);
+            log_error("Readline failed: %s", err_msg);
+        }
         return NULL;
     }
 
@@ -162,19 +159,13 @@ inp_readline(void)
         }
 
         ui_reset_idle_time();
-        _inp_write(rl_line_buffer, rl_point);
+        if (!get_password) {
+            _inp_write(rl_line_buffer, rl_point);
+        }
         inp_nonblocking(TRUE);
     } else {
         inp_nonblocking(FALSE);
         prof_handle_idle();
-    }
-
-    if (inp_timeout == 1000) {
-        p_rl_timeout.tv_sec = 1;
-        p_rl_timeout.tv_usec = 0;
-    } else {
-        p_rl_timeout.tv_sec = 0;
-        p_rl_timeout.tv_usec = inp_timeout * 1000;
     }
 
     if (inp_line) {
@@ -246,15 +237,8 @@ inp_get_password(void)
     get_password = TRUE;
     while (!password) {
         password = inp_readline();
-        ui_update();
-        werase(inp_win);
-        wmove(inp_win, 0, 0);
-        pad_start = 0;
-        _inp_win_update_virtual();
-        doupdate();
     }
     get_password = FALSE;
-
     status_bar_clear();
     return password;
 }
@@ -302,7 +286,7 @@ _inp_printable(const wint_t ch)
     bytes[utf_len] = '\0';
     gunichar unichar = g_utf8_get_char(bytes);
 
-    return g_unichar_isprint(unichar) && (ch != KEY_MOUSE);
+    return g_unichar_isprint(unichar);
 }
 
 static int
@@ -445,6 +429,7 @@ _inp_rl_tab_handler(int count, int key)
         if (result) {
             rl_replace_line(result, 0);
             rl_point = rl_end;
+            free(result);
         }
     } else if (strncmp(rl_line_buffer, "/", 1) == 0) {
         ProfWin *window = wins_get_current();
